@@ -24,7 +24,7 @@ using System.Runtime.InteropServices;
 [assembly: AssemblyCopyright("Copyright © 2025 Starloch")]
 
 // The minimum Version of N.I.N.A. that this plugin is compatible with
-[assembly: AssemblyMetadata("MinimumApplicationVersion", "3.0.0.2017")]
+[assembly: AssemblyMetadata("MinimumApplicationVersion", "3.1.2.9001")]
 
 // The license your plugin code is using
 [assembly: AssemblyMetadata("License", "MPL-2.0")]
@@ -51,7 +51,7 @@ using System.Runtime.InteropServices;
 //[Optional] An additional url to an example example screenshot of your plugin in action
 [assembly: AssemblyMetadata("AltScreenshotURL", "")]
 //[Optional] An in-depth description of your plugin
-[assembly: AssemblyMetadata("LongDescription", @"Allows the editing of advance sequences through controllable Web Apps
+[assembly: AssemblyMetadata("LongDescription", @"Allows the editing of advance sequences through Web Apps
 
 ## Features:
 - Coming soon
