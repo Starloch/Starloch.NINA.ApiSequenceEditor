@@ -401,3 +401,5 @@ FodyWeavers.xsd
 
 # End of https://www.toptal.com/developers/gitignore/api/csharp
 /.vs
+.vs/API Sequence Editor/v17/DocumentLayout.json
+.vs/API Sequence Editor/v17/.suo

@@ -14,6 +14,8 @@ using NINA.Sequencer.Mediator;
 using NINA.Profile;
 using NINA.Profile.Interfaces;
 using NINA.Sequencer.Interfaces.Mediator;
+using System.Linq;
+using System.Collections.Generic;
 
 namespace Starloch.NINA.ApiSequenceEditor
 {
@@ -42,6 +44,7 @@ namespace Starloch.NINA.ApiSequenceEditor
 
             RestartServerCommand = new RelayCommand(RestartHttpServer);
 
+            // If user enabled, start immediately
             if (WebServerEnabled)
             {
                 StartHttpServer();
@@ -67,7 +70,6 @@ namespace Starloch.NINA.ApiSequenceEditor
 
         private void SaveSettings()
         {
-            // Store the bool and int as strings
             _pluginSettings.SetValueString(nameof(WebServerEnabled), _webServerEnabled.ToString());
             _pluginSettings.SetValueString(nameof(Port), _port.ToString());
             RaisePropertyChanged(nameof(WebServerEnabled));
@@ -119,7 +121,7 @@ namespace Starloch.NINA.ApiSequenceEditor
         }
 
         /// <summary>
-        /// Shows either "Server Stopped" or the URL if running.
+        /// Shows either "Server Stopped" or the URLs if running (or error messages).
         /// </summary>
         public string ServerUrls
         {
@@ -145,19 +147,28 @@ namespace Starloch.NINA.ApiSequenceEditor
                 StopHttpServer(); // Make sure any existing listener is closed
 
                 _listener = new HttpListener();
-                // Bind only to localhost for fewer permission issues:
+
+                // 1) Try to bind to localhost for fewer permission issues
                 _listener.Prefixes.Add($"http://localhost:{_port}/");
                 _listener.Prefixes.Add($"http://127.0.0.1:{_port}/");
+
+                // If you want a fallback to "http://+:{_port}/" (which requires admin),
+                // you can do so in a second try/catch below. But let's start with just localhost:
 
                 _listener.Start();
                 _cts = new CancellationTokenSource();
                 _listenerTask = Task.Run(() => HandleRequests(_cts.Token));
 
+                // If started successfully, show the debug URL
                 ServerUrls = $"http://localhost:{_port}/debug";
             }
             catch (HttpListenerException ex)
             {
-                ServerUrls = $"Failed to start: {ex.Message}";
+                // Optionally fallback to "http://+:{_port}/" if you want to try
+                // more general binding. But that often needs admin privs:
+                // fallback attempt is commented out here, so you can see the error.
+
+                ServerUrls = $"Failed to start server on port {_port}: {ex.Message}";
             }
         }
 
@@ -193,15 +204,44 @@ namespace Starloch.NINA.ApiSequenceEditor
         {
             try
             {
-                string responseString = "";
+                string responseString;
                 var response = context.Response;
                 response.ContentType = "application/json";
 
                 if (context.Request.HttpMethod == "GET" && context.Request.Url.AbsolutePath == "/debug")
                 {
-                    var debugInfo = _sequenceMediator.GetAllTargetsInAdvancedSequence();
-                    responseString = JsonSerializer.Serialize(debugInfo, new JsonSerializerOptions { WriteIndented = true });
-                    response.StatusCode = 200;
+                    try
+                    {
+                        // Retrieve the sequence container
+                        var sequenceContainer = GetCurrentSequenceContainer(); // ⬅️ Get the active sequence
+                        if (sequenceContainer == null)
+                        {
+                            responseString = JsonSerializer.Serialize(new { error = "No active sequence found." });
+                            response.StatusCode = 404;
+                        }
+                        else
+                        {
+                            // Extract `Items` from `SequenceContainer`
+                            var itemsProperty = sequenceContainer.GetType().GetProperty("Items");
+                            var items = itemsProperty?.GetValue(sequenceContainer) as IEnumerable<object>;
+
+                            // Process items into JSON-friendly format
+                            var extractedData = ExtractObjectData(items, 0);
+
+                            var options = new JsonSerializerOptions
+                            {
+                                WriteIndented = true
+                            };
+
+                            responseString = JsonSerializer.Serialize(extractedData, options);
+                            response.StatusCode = 200;
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        responseString = JsonSerializer.Serialize(new { error = "Failed to retrieve data", details = ex.Message });
+                        response.StatusCode = 500;
+                    }
                 }
                 else
                 {
@@ -212,12 +252,71 @@ namespace Starloch.NINA.ApiSequenceEditor
                 byte[] buffer = Encoding.UTF8.GetBytes(responseString);
                 response.ContentLength64 = buffer.Length;
                 await response.OutputStream.WriteAsync(buffer, 0, buffer.Length);
-                response.OutputStream.Close();
             }
-            catch
+            catch (Exception ex)
             {
+                string errorResponse = JsonSerializer.Serialize(new { error = "Internal server error", details = ex.Message });
+                byte[] buffer = Encoding.UTF8.GetBytes(errorResponse);
                 context.Response.StatusCode = 500;
+                context.Response.ContentLength64 = buffer.Length;
+                await context.Response.OutputStream.WriteAsync(buffer, 0, buffer.Length);
             }
+            finally
+            {
+                context.Response.OutputStream.Close();
+            }
+        }
+
+        private object GetCurrentSequenceContainer()
+        {
+            try
+            {
+                // Try to access the sequence root container inside `_sequenceMediator`
+                var rootContainerProperty = _sequenceMediator.GetType().GetProperty("AdvancedSequenceRootContainer");
+
+                if (rootContainerProperty != null)
+                {
+                    return rootContainerProperty.GetValue(_sequenceMediator); // Get the sequence container
+                }
+
+                return null;
+            }
+            catch (Exception ex)
+            {
+                return new { error = "Could not retrieve Advanced Sequence Root Container", details = ex.Message };
+            }
+        }
+
+        private const int MAX_DEPTH_LIMIT = 10; // ⬅️ Set this lower if recursion happens
+
+        private object ExtractObjectData(object obj, int depth)
+        {
+            if (obj == null) return null;
+            if (depth > MAX_DEPTH_LIMIT) return new { error = "Max depth reached" };
+
+            var type = obj.GetType();
+
+            // If it's a simple type, return it directly
+            if (type.IsPrimitive || obj is string || obj is DateTime)
+                return obj.ToString();
+
+            // If it's a collection, process each item
+            if (obj is IEnumerable<object> enumerable)
+                return enumerable.Select(item => ExtractObjectData(item, depth + 1)).ToList();
+
+            // Process object properties
+            var properties = type.GetProperties()
+                .Where(p => p.CanRead)
+                .ToDictionary(
+                    p => p.Name,
+                    p => ExtractObjectData(p.GetValue(obj), depth + 1) // ⬅️ Recursively process nested objects
+                );
+
+            return new
+            {
+                Type = type.Name,
+                Properties = properties
+            };
         }
 
         #endregion
@@ -259,10 +358,14 @@ namespace Starloch.NINA.ApiSequenceEditor
         #endregion
     }
 
+    /// <summary>
+    /// Simple relay command for your button binding in Options.xaml
+    /// </summary>
     public class RelayCommand : ICommand
     {
         private readonly Action _execute;
         public RelayCommand(Action execute) => _execute = execute;
+
         public event EventHandler CanExecuteChanged;
         public bool CanExecute(object parameter) => true;
         public void Execute(object parameter) => _execute();
