@@ -7,6 +7,44 @@
     <!--  Furthermore the Resource Dictionary has to be exported via code behind export attributes  -->
     <DataTemplate x:Key="API Sequence Editor_Options">
         <StackPanel Orientation="Vertical">
+            <!-- Web Server Enabled -->
+            <StackPanel Orientation="Horizontal"
+                        Margin="0,0,0,5">
+                <TextBlock
+                    Width="150"
+                    Margin="0,0,5,0"
+                    Text="Web Server Enabled"/>
+                <CheckBox IsChecked="{Binding WebServerEnabled}"/>
+            </StackPanel>
+
+            <!-- General Server Settings -->
+            <GroupBox Header="General Settings"
+                      Margin="0,10,0,0">
+                <StackPanel Orientation="Vertical">
+                    <StackPanel Orientation="Horizontal"
+                                Margin="0,0,0,5">
+                        <TextBlock Text="Port"
+                                   Width="100"/>
+                        <TextBox MinWidth="50"
+                                 Text="{Binding Port}"/>
+                    </StackPanel>
+                    <StackPanel Orientation="Horizontal"
+                                Margin="0,0,0,5">
+                        <TextBlock Text="Server URLs"
+                                   Width="100"/>
+                        <TextBlock MinWidth="200"
+                                   Text="{Binding ServerUrls}"
+                                   TextWrapping="Wrap"/>
+                    </StackPanel>
+                    <Button Content="Restart Server"
+                            Command="{Binding RestartServerCommand}"
+                            Width="100"
+                            Height="30"/>
+                </StackPanel>
+
+
+
+
             <StackPanel Orientation="Horizontal">
                 <TextBlock Text="Default Notification Message" />
                 <TextBox MinWidth="50" Text="{Binding DefaultNotificationMessage}" />
