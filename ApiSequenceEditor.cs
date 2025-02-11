@@ -1,21 +1,25 @@
 ﻿using System;
+using System.Collections.Generic;
 using System.ComponentModel;
 using System.ComponentModel.Composition;
+using System.IO;
 using System.Net;
-using System.Runtime.CompilerServices;
 using System.Text;
-using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
+using System.Windows;
 using System.Windows.Input;
 using NINA.Plugin;
 using NINA.Plugin.Interfaces;
-using NINA.Sequencer.Mediator;
 using NINA.Profile;
 using NINA.Profile.Interfaces;
+using NINA.Sequencer.Mediator;
+using NINA.Sequencer.Container; // Provides SequenceRootContainer & ISequenceRootContainer
+using NINA.Sequencer;
+using NINA.Astrometry;
 using NINA.Sequencer.Interfaces.Mediator;
-using System.Linq;
-using System.Collections.Generic;
+using Newtonsoft.Json;
+using Newtonsoft.Json.Serialization;
 
 namespace Starloch.NINA.ApiSequenceEditor
 {
@@ -24,11 +28,11 @@ namespace Starloch.NINA.ApiSequenceEditor
     {
         private readonly ISequenceMediator _sequenceMediator;
         private readonly IPluginOptionsAccessor _pluginSettings;
+        private readonly IProfileService _profileService;
 
         private HttpListener _listener;
         private CancellationTokenSource _cts;
         private Task _listenerTask;
-
         private bool _webServerEnabled;
         private int _port;
         private string _serverUrls;
@@ -37,14 +41,11 @@ namespace Starloch.NINA.ApiSequenceEditor
         public ApiSequenceEditor(ISequenceMediator sequenceMediator, IProfileService profileService)
         {
             _sequenceMediator = sequenceMediator;
+            _profileService = profileService;
             _pluginSettings = new PluginOptionsAccessor(profileService, Guid.Parse(this.Identifier));
 
-            // Load settings from plugin options
             LoadSettings();
-
             RestartServerCommand = new RelayCommand(RestartHttpServer);
-
-            // If user enabled, start immediately
             if (WebServerEnabled)
             {
                 StartHttpServer();
@@ -55,17 +56,13 @@ namespace Starloch.NINA.ApiSequenceEditor
 
         private void LoadSettings()
         {
-            // For older versions of the plugin system, only GetValueString/SetValueString may exist
             var enabledStr = _pluginSettings.GetValueString(nameof(WebServerEnabled), "false");
             _webServerEnabled = bool.TryParse(enabledStr, out bool en) && en;
 
             var portStr = _pluginSettings.GetValueString(nameof(Port), "1999");
-            if (!int.TryParse(portStr, out _port))
-            {
-                _port = 1999;
-            }
+            _port = int.TryParse(portStr, out int p) ? p : 1999;
 
-            _serverUrls = $"http://localhost:{_port}/debug";
+            ServerUrls = $"http://localhost:{_port}/debug";
         }
 
         private void SaveSettings()
@@ -77,9 +74,6 @@ namespace Starloch.NINA.ApiSequenceEditor
             RaisePropertyChanged(nameof(ServerUrls));
         }
 
-        /// <summary>
-        /// True/False controlling whether the HTTP server should run.
-        /// </summary>
         public bool WebServerEnabled
         {
             get => _webServerEnabled;
@@ -89,22 +83,15 @@ namespace Starloch.NINA.ApiSequenceEditor
                 {
                     _webServerEnabled = value;
                     if (_webServerEnabled)
-                    {
                         StartHttpServer();
-                    }
                     else
-                    {
                         StopHttpServer();
-                    }
                     SaveSettings();
                     RaisePropertyChanged();
                 }
             }
         }
 
-        /// <summary>
-        /// Port for the HTTP server.
-        /// </summary>
         public int Port
         {
             get => _port;
@@ -120,9 +107,6 @@ namespace Starloch.NINA.ApiSequenceEditor
             }
         }
 
-        /// <summary>
-        /// Shows either "Server Stopped" or the URLs if running (or error messages).
-        /// </summary>
         public string ServerUrls
         {
             get => _serverUrls;
@@ -136,6 +120,16 @@ namespace Starloch.NINA.ApiSequenceEditor
             }
         }
 
+        public ICommand RestartServerCommand { get; }
+
+        public void RestartHttpServer()
+        {
+            StopHttpServer();
+            if (WebServerEnabled)
+                StartHttpServer();
+            SaveSettings();
+        }
+
         #endregion
 
         #region HTTP Server Logic
@@ -144,30 +138,17 @@ namespace Starloch.NINA.ApiSequenceEditor
         {
             try
             {
-                StopHttpServer(); // Make sure any existing listener is closed
-
+                StopHttpServer();
                 _listener = new HttpListener();
-
-                // 1) Try to bind to localhost for fewer permission issues
                 _listener.Prefixes.Add($"http://localhost:{_port}/");
                 _listener.Prefixes.Add($"http://127.0.0.1:{_port}/");
-
-                // If you want a fallback to "http://+:{_port}/" (which requires admin),
-                // you can do so in a second try/catch below. But let's start with just localhost:
-
                 _listener.Start();
                 _cts = new CancellationTokenSource();
                 _listenerTask = Task.Run(() => HandleRequests(_cts.Token));
-
-                // If started successfully, show the debug URL
-                ServerUrls = $"http://localhost:{_port}/debug";
+                ServerUrls = $"PUT /sequence/load?sequencename=xxx OR send JSON in payload to update sequence.";
             }
             catch (HttpListenerException ex)
             {
-                // Optionally fallback to "http://+:{_port}/" if you want to try
-                // more general binding. But that often needs admin privs:
-                // fallback attempt is commented out here, so you can see the error.
-
                 ServerUrls = $"Failed to start server on port {_port}: {ex.Message}";
             }
         }
@@ -195,162 +176,144 @@ namespace Starloch.NINA.ApiSequenceEditor
                 }
                 catch
                 {
-                    if (token.IsCancellationRequested) break;
+                    if (token.IsCancellationRequested)
+                        break;
                 }
             }
         }
 
         private async Task ProcessRequest(HttpListenerContext context)
         {
+            string responseString = "";
+            int statusCode = 200;
             try
             {
-                string responseString;
-                var response = context.Response;
-                response.ContentType = "application/json";
-
-                if (context.Request.HttpMethod == "GET" && context.Request.Url.AbsolutePath == "/debug")
+                string path = context.Request.Url.AbsolutePath.ToLower();
+                string method = context.Request.HttpMethod.ToUpperInvariant();
+                if (method == "PUT" && path == "/sequence/load")
                 {
-                    try
+                    // Load sequence from file if a "sequencename" query parameter is provided; otherwise from payload.
+                    string seqName = context.Request.QueryString["sequencename"];
+                    SequenceRootContainer container = null;
+                    if (!string.IsNullOrWhiteSpace(seqName))
                     {
-                        // Retrieve the sequence container
-                        var sequenceContainer = GetCurrentSequenceContainer(); // ⬅️ Get the active sequence
-                        if (sequenceContainer == null)
+                        IProfile profile = _profileService.ActiveProfile;
+                        string folder = profile.SequenceSettings.DefaultSequenceFolder;
+                        string filePath = Path.Combine(folder, seqName + ".json");
+                        if (!File.Exists(filePath))
                         {
-                            responseString = JsonSerializer.Serialize(new { error = "No active sequence found." });
-                            response.StatusCode = 404;
+                            statusCode = 404;
+                            responseString = JsonConvert.SerializeObject(new { error = "Sequence file not found." });
                         }
                         else
                         {
-                            // Extract `Items` from `SequenceContainer`
-                            var itemsProperty = sequenceContainer.GetType().GetProperty("Items");
-                            var items = itemsProperty?.GetValue(sequenceContainer) as IEnumerable<object>;
-
-                            // Process items into JSON-friendly format
-                            var extractedData = ExtractObjectData(items, 0);
-
-                            var options = new JsonSerializerOptions
+                            string json = File.ReadAllText(filePath);
+                            try
                             {
-                                WriteIndented = true
-                            };
-
-                            responseString = JsonSerializer.Serialize(extractedData, options);
-                            response.StatusCode = 200;
+                                var settings = new JsonSerializerSettings
+                                {
+                                    TypeNameHandling = TypeNameHandling.Auto,
+                                    SerializationBinder = new SimpleBinder(),
+                                    TypeNameAssemblyFormatHandling = TypeNameAssemblyFormatHandling.Simple,
+                                    MissingMemberHandling = MissingMemberHandling.Ignore,
+                                    PreserveReferencesHandling = PreserveReferencesHandling.Objects,
+                                    NullValueHandling = NullValueHandling.Include
+                                };
+                                container = JsonConvert.DeserializeObject<SequenceRootContainer>(json, settings);
+                            }
+                            catch (Exception ex)
+                            {
+                                string inner = ex.InnerException != null ? ex.InnerException.Message : "";
+                                statusCode = 500;
+                                responseString = JsonConvert.SerializeObject(new { error = "Error deserializing sequence from file.", details = ex.Message, innerException = inner });
+                            }
                         }
                     }
-                    catch (Exception ex)
+                    else
                     {
-                        responseString = JsonSerializer.Serialize(new { error = "Failed to retrieve data", details = ex.Message });
-                        response.StatusCode = 500;
+                        using var reader = new StreamReader(context.Request.InputStream, context.Request.ContentEncoding);
+                        string json = await reader.ReadToEndAsync();
+                        try
+                        {
+                            var settings = new JsonSerializerSettings
+                            {
+                                TypeNameHandling = TypeNameHandling.Auto,
+                                SerializationBinder = new SimpleBinder(),
+                                TypeNameAssemblyFormatHandling = TypeNameAssemblyFormatHandling.Simple,
+                                MissingMemberHandling = MissingMemberHandling.Ignore,
+                                PreserveReferencesHandling = PreserveReferencesHandling.Objects,
+                                NullValueHandling = NullValueHandling.Include
+                            };
+                            container = JsonConvert.DeserializeObject<SequenceRootContainer>(json, settings);
+                        }
+                        catch (Exception ex)
+                        {
+                            string inner = ex.InnerException != null ? ex.InnerException.Message : "";
+                            statusCode = 500;
+                            responseString = JsonConvert.SerializeObject(new { error = "Error deserializing sequence from payload.", details = ex.Message, innerException = inner });
+                        }
+                    }
+
+                    if (container != null)
+                    {
+                        await Application.Current.Dispatcher.InvokeAsync(() =>
+                        {
+                            _sequenceMediator.SetAdvancedSequence(container);
+                        });
+                        responseString = JsonConvert.SerializeObject(new { success = "Sequence updated successfully." });
                     }
                 }
-                else
-                {
-                    response.StatusCode = 404;
-                    responseString = JsonSerializer.Serialize(new { error = "Endpoint not found" });
-                }
-
-                byte[] buffer = Encoding.UTF8.GetBytes(responseString);
-                response.ContentLength64 = buffer.Length;
-                await response.OutputStream.WriteAsync(buffer, 0, buffer.Length);
             }
             catch (Exception ex)
             {
-                string errorResponse = JsonSerializer.Serialize(new { error = "Internal server error", details = ex.Message });
-                byte[] buffer = Encoding.UTF8.GetBytes(errorResponse);
-                context.Response.StatusCode = 500;
-                context.Response.ContentLength64 = buffer.Length;
-                await context.Response.OutputStream.WriteAsync(buffer, 0, buffer.Length);
+                statusCode = 500;
+                responseString = JsonConvert.SerializeObject(new { error = "Internal server error", details = ex.Message });
             }
             finally
             {
+                byte[] buffer = Encoding.UTF8.GetBytes(responseString);
+                context.Response.StatusCode = statusCode;
+                context.Response.ContentType = "application/json";
+                context.Response.ContentLength64 = buffer.Length;
+                await context.Response.OutputStream.WriteAsync(buffer, 0, buffer.Length);
                 context.Response.OutputStream.Close();
             }
         }
 
-        private object GetCurrentSequenceContainer()
+        public class SimpleBinder : ISerializationBinder
         {
-            try
+            public IList<Type> AllowedTypes { get; set; } = null;
+
+            public Type BindToType(string assemblyName, string typeName)
             {
-                // Try to access the sequence root container inside `_sequenceMediator`
-                var rootContainerProperty = _sequenceMediator.GetType().GetProperty("AdvancedSequenceRootContainer");
-
-                if (rootContainerProperty != null)
-                {
-                    return rootContainerProperty.GetValue(_sequenceMediator); // Get the sequence container
-                }
-
-                return null;
+                // Optionally, you could restrict to allowed types.
+                return Type.GetType($"{typeName}, {assemblyName}");
             }
-            catch (Exception ex)
+
+            public void BindToName(Type serializedType, out string assemblyName, out string typeName)
             {
-                return new { error = "Could not retrieve Advanced Sequence Root Container", details = ex.Message };
+                assemblyName = serializedType.Assembly.FullName;
+                typeName = serializedType.FullName;
             }
-        }
-
-        private const int MAX_DEPTH_LIMIT = 10; // ⬅️ Set this lower if recursion happens
-
-        private object ExtractObjectData(object obj, int depth)
-        {
-            if (obj == null) return null;
-            if (depth > MAX_DEPTH_LIMIT) return new { error = "Max depth reached" };
-
-            var type = obj.GetType();
-
-            // If it's a simple type, return it directly
-            if (type.IsPrimitive || obj is string || obj is DateTime)
-                return obj.ToString();
-
-            // If it's a collection, process each item
-            if (obj is IEnumerable<object> enumerable)
-                return enumerable.Select(item => ExtractObjectData(item, depth + 1)).ToList();
-
-            // Process object properties
-            var properties = type.GetProperties()
-                .Where(p => p.CanRead)
-                .ToDictionary(
-                    p => p.Name,
-                    p => ExtractObjectData(p.GetValue(obj), depth + 1) // ⬅️ Recursively process nested objects
-                );
-
-            return new
-            {
-                Type = type.Name,
-                Properties = properties
-            };
         }
 
         #endregion
-
-        #region Commands
-
-        public ICommand RestartServerCommand { get; }
-
-        public void RestartHttpServer()
-        {
-            StopHttpServer();
-            if (WebServerEnabled)
-            {
-                StartHttpServer();
-            }
-            SaveSettings();
-        }
-
-        #endregion
-
-        #region PluginBase
 
         public override async Task Teardown()
         {
-            StopHttpServer();
+            _cts?.Cancel();
+            if (_listener != null && _listener.IsListening)
+            {
+                _listener.Stop();
+                _listener.Close();
+            }
             await base.Teardown();
         }
 
-        #endregion
-
-        #region INotifyPropertyChanged
+        #region INotifyPropertyChanged Members
 
         public event PropertyChangedEventHandler PropertyChanged;
-        protected void RaisePropertyChanged([CallerMemberName] string propertyName = null)
+        protected void RaisePropertyChanged([System.Runtime.CompilerServices.CallerMemberName] string propertyName = null)
         {
             PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
         }
@@ -358,14 +321,10 @@ namespace Starloch.NINA.ApiSequenceEditor
         #endregion
     }
 
-    /// <summary>
-    /// Simple relay command for your button binding in Options.xaml
-    /// </summary>
     public class RelayCommand : ICommand
     {
         private readonly Action _execute;
         public RelayCommand(Action execute) => _execute = execute;
-
         public event EventHandler CanExecuteChanged;
         public bool CanExecute(object parameter) => true;
         public void Execute(object parameter) => _execute();
