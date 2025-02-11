@@ -8672,11 +8672,11 @@
   "project": {
     "version": "1.0.0",
     "restore": {
-      "projectUniqueName": "C:\\Users\\User\\Source\\Repos\\Starloch.NINA.ApiSequenceEditor\\API Sequence Editor.csproj",
+      "projectUniqueName": "C:\\Users\\User\\repos\\Starloch.NINA.ApiSequenceEditor\\API Sequence Editor.csproj",
       "projectName": "Starloch.NINA.ApiSequenceEditor",
-      "projectPath": "C:\\Users\\User\\Source\\Repos\\Starloch.NINA.ApiSequenceEditor\\API Sequence Editor.csproj",
+      "projectPath": "C:\\Users\\User\\repos\\Starloch.NINA.ApiSequenceEditor\\API Sequence Editor.csproj",
       "packagesPath": "C:\\Users\\User\\.nuget\\packages\\",
-      "outputPath": "C:\\Users\\User\\Source\\Repos\\Starloch.NINA.ApiSequenceEditor\\obj\\",
+      "outputPath": "C:\\Users\\User\\repos\\Starloch.NINA.ApiSequenceEditor\\obj\\",
       "projectStyle": "PackageReference",
       "fallbackFolders": [
         "C:\\Program Files (x86)\\Microsoft Visual Studio\\Shared\\NuGetPackages"
