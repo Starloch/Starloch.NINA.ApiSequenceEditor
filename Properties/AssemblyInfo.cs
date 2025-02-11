@@ -3,7 +3,7 @@ using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 
 // [MANDATORY] The following GUID is used as a unique identifier of the plugin. Generate a fresh one for your plugin!
-[assembly: Guid("7a916c29-94c1-4a09-8ffb-c50928ad7cbb")]
+[assembly: Guid("059b03db-dc64-4024-b78f-63913a55b14a")]
 
 // [MANDATORY] The assembly versioning
 //Should be incremented for each new release build of a plugin
@@ -39,7 +39,7 @@ using System.Runtime.InteropServices;
 [assembly: AssemblyMetadata("Homepage", "https://www.starloch.com")]
 
 //[Optional] Common tags that quickly describe your plugin
-[assembly: AssemblyMetadata("Tags", "")]
+[assembly: AssemblyMetadata("Tags", "Web,API,Sequencer")]
 
 //[Optional] A link that will show a log of all changes in between your plugin's versions
 [assembly: AssemblyMetadata("ChangelogURL", "https://github.com/Starloch/Starloch.NINA.ApiSequenceEditor/CHANGELOG.md")]
