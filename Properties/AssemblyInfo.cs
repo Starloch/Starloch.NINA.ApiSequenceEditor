@@ -47,7 +47,7 @@ using System.Runtime.InteropServices;
 //[Optional] The url to a featured logo that will be displayed in the plugin list next to the name
 [assembly: AssemblyMetadata("FeaturedImageURL", "https://starloch.com/wp-content/uploads/2024/11/nessyLogoWhiteBorder-1.png")]
 //[Optional] A url to an example screenshot of your plugin in action
-[assembly: AssemblyMetadata("ScreenshotURL", "")]
+[assembly: AssemblyMetadata("ScreenshotURL", "https://starloch.com/wp-content/gallery/starloch-all/Sharpless_103_Cygnus_Loop_11-14-2024.jpg")]
 //[Optional] An additional url to an example example screenshot of your plugin in action
 [assembly: AssemblyMetadata("AltScreenshotURL", "")]
 //[Optional] An in-depth description of your plugin
