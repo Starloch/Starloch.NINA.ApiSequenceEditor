@@ -58,7 +58,7 @@ using System.Runtime.InteropServices;
 
 ---
 
-If you have question/issues/feedback, you can create an issue [here](https://github.com/Starloch/Starloch.NINA.ApiSequenceEditor/issues)")]
+If you have question/issues/feedback, you can create an issue [here](https://github.com/Starloch/Starloch.NINA.ApiSequenceEditor/blob/main/CHANGELOG.md)")]
 
 // Setting ComVisible to false makes the types in this assembly not visible
 // to COM components.  If you need to access a type in this assembly from
