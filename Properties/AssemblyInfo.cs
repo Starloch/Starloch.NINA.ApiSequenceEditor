@@ -53,12 +53,15 @@ using System.Runtime.InteropServices;
 //[Optional] An in-depth description of your plugin
 [assembly: AssemblyMetadata("LongDescription", @"Allows the editing of advance sequences through Web Apps
 
-## Features:
-- Coming soon
+# Features #
+* Coming soon
 
----
+# Getting Help #
 
-If you have question/issues/feedback, you can create an issue [here](https://github.com/Starloch/Starloch.NINA.ApiSequenceEditor/blob/main/CHANGELOG.md)")]
+If you have question/issues/feedback, you can create an issue [here](https://github.com/Starloch/Starloch.NINA.ApiSequenceEditor/blob/main/CHANGELOG.md)
+* This Plugin is provided 'as is' under the terms of the [Mozilla Public License 2.0](https://github.com/Starloch/Starloch.NINA.ApiSequenceEditor/blob/main/LICENSE)
+* Source code for this plugin is available at this plugin's [repository](https://github.com/Starloch/Starloch.NINA.ApiSequenceEditor)
+")]
 
 // Setting ComVisible to false makes the types in this assembly not visible
 // to COM components.  If you need to access a type in this assembly from
