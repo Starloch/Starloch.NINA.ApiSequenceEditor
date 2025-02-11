@@ -51,7 +51,9 @@ using System.Runtime.InteropServices;
 //[Optional] An additional url to an example example screenshot of your plugin in action
 [assembly: AssemblyMetadata("AltScreenshotURL", "")]
 //[Optional] An in-depth description of your plugin
-[assembly: AssemblyMetadata("LongDescription", @"Allows the editing of advance sequences through controllable Web Apps")]
+[assembly: AssemblyMetadata("LongDescription", @"Allows the editing of advance sequences through controllable Web Apps
+
+If you have question/issues/feedback, you can create an issue [here](https://github.com/Starloch/Starloch.NINA.ApiSequenceEditor/issues)")]
 
 // Setting ComVisible to false makes the types in this assembly not visible
 // to COM components.  If you need to access a type in this assembly from
