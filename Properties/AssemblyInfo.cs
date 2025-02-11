@@ -53,6 +53,11 @@ using System.Runtime.InteropServices;
 //[Optional] An in-depth description of your plugin
 [assembly: AssemblyMetadata("LongDescription", @"Allows the editing of advance sequences through controllable Web Apps
 
+## Features:
+- Coming soon
+
+---
+
 If you have question/issues/feedback, you can create an issue [here](https://github.com/Starloch/Starloch.NINA.ApiSequenceEditor/issues)")]
 
 // Setting ComVisible to false makes the types in this assembly not visible
